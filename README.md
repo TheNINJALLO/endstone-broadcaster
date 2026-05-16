@@ -21,10 +21,24 @@ A Python wrapper plugin for Endstone that bridges your Bedrock server to Xbox Li
    ```
 
 3. **Authentication**:
-   Start your server. Keep an eye on your console. The plugin will print a Microsoft authentication link and a device code.
-   - Go to the provided URL (usually `https://microsoft.com/link`) on any device.
+   Start your server. Keep an eye on your console. The plugin will print a Microsoft authentication link and a device code:
+   
+   ```text
+   [23:35:12 WARNING]: [Broadcaster] --- XBOX AUTH REQUIRED ---
+   [23:35:12 WARNING]: [Broadcaster] To sign in, use a web browser to open the page https://microsoft.com/link and enter the code AB12CD34 to authenticate.
+   ```
+
+   - Go to the provided URL on any device.
    - Enter the code shown in the console.
    - Login with the Microsoft/Xbox account you want to use as the "bot" account.
+   
+   Once authenticated, the console will output a stylized success banner:
+   
+   ```text
+   [23:35:39 INFO]: [Broadcaster] =======================================================
+   [23:35:39 INFO]: [Broadcaster] Broadcaster Logged In: Relaystone (2535432775022326) with 1/2000 friends
+   [23:35:39 INFO]: [Broadcaster] =======================================================
+   ```
 
 4. **Add the Bot as a Friend**:
    On your actual Xbox account, send a friend request to the bot account. The bot will automatically accept it. 
