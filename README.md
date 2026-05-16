@@ -36,7 +36,7 @@ A Python wrapper plugin for Endstone that bridges your Bedrock server to Xbox Li
    
    ```text
    [23:35:39 INFO]: [Broadcaster] =======================================================
-   [23:35:39 INFO]: [Broadcaster] Broadcaster Logged In: Relaystone (2535432775022326) with 1/2000 friends
+   [23:35:39 INFO]: [Broadcaster] Broadcaster Logged In: spareAccountName (0123456789876543) with 1/2000 friends
    [23:35:39 INFO]: [Broadcaster] =======================================================
    ```
 
