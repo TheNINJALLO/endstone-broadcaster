@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "endstone-broadcaster"
-version = "1.0.5"
+version = "1.0.6"
 description = "A wrapper plugin for MCXboxBroadcast to broadcast your server to Xbox Live."
 readme = "README.md"
 license = {text = "MIT"}

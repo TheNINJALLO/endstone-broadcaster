@@ -8,6 +8,8 @@ import threading
 import platform
 from pathlib import Path
 
+RESTART_INTERVAL = 900  # 15 minutes
+
 class BroadcasterManager:
     def __init__(self, data_folder, logger, server_ip, server_port):
         self.data_folder = data_folder
@@ -20,9 +22,11 @@ class BroadcasterManager:
         self.jar_path = self.data_folder / self.local_jar_name
         self.config_path = self.data_folder / "config.yml"
         
+        self.java_bin = None
         self.proc = None
         self.running = False
         self.tail_thread = None
+        self.restart_thread = None
 
     def get_java(self):
         # check path first
@@ -197,8 +201,8 @@ debug-mode: false
         self.logger.info("created default config")
 
     def start(self):
-        java_bin = self.get_java()
-        if not java_bin:
+        self.java_bin = self.get_java()
+        if not self.java_bin:
             self.logger.error("can't start broadcaster without java")
             return
             
@@ -208,11 +212,18 @@ debug-mode: false
             return
             
         self.setup_config()
-        
+        self._spawn_process()
+
+        # start the auto-restart cycle
+        self.restart_thread = threading.Thread(target=self._restart_loop, daemon=True)
+        self.restart_thread.start()
+
+    def _spawn_process(self):
+        """Launch the java process and tail its output."""
         self.logger.info("spinning up java process...")
         try:
             self.proc = subprocess.Popen(
-                [java_bin, "-jar", self.local_jar_name],
+                [self.java_bin, "-jar", self.local_jar_name],
                 cwd=str(self.data_folder),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -227,6 +238,42 @@ debug-mode: false
             self.tail_thread.start()
         except Exception as e:
             self.logger.error(f"proc start failed: {e}")
+
+    def _kill_process(self):
+        """Kill the current java process without clearing self.running."""
+        if self.proc:
+            try:
+                if self.proc.stdin:
+                    self.proc.stdin.write("exit\n")
+                    self.proc.stdin.flush()
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.proc.terminate()
+            except Exception:
+                pass
+            finally:
+                self.proc = None
+
+        if self.tail_thread and self.tail_thread.is_alive():
+            self.tail_thread.join(timeout=2.0)
+
+    def _restart_loop(self):
+        """Automatically restart the java process every RESTART_INTERVAL seconds."""
+        while self.running:
+            # sleep in small increments so stop() can break out quickly
+            for _ in range(RESTART_INTERVAL):
+                if not self.running:
+                    return
+                import time
+                time.sleep(1)
+
+            if not self.running:
+                return
+
+            self.logger.info("auto-restarting broadcaster...")
+            self._kill_process()
+            self.setup_config()
+            self._spawn_process()
 
     def tail(self):
         if not self.proc or not self.proc.stdout:
@@ -270,18 +317,4 @@ debug-mode: false
 
     def stop(self):
         self.running = False
-        if self.proc:
-            try:
-                if self.proc.stdin:
-                    self.proc.stdin.write("exit\n")
-                    self.proc.stdin.flush()
-                self.proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.proc.terminate()
-            except Exception:
-                pass
-            finally:
-                self.proc = None
-                
-        if self.tail_thread and self.tail_thread.is_alive():
-            self.tail_thread.join(timeout=1.0)
+        self._kill_process()
