@@ -7,3 +7,5 @@ dist/
 *.egg-info/
 .idea/
 .vscode/
+discord.md
+*.log

@@ -10,8 +10,6 @@ class BroadcasterPlugin(Plugin):
         self.mgr = None
 
     def on_enable(self):
-        self.logger.info("starting broadcaster integration")
-        
         self.mgr = BroadcasterManager(
             Path(self.data_folder),
             self.logger,
@@ -21,6 +19,6 @@ class BroadcasterPlugin(Plugin):
         self.mgr.start()
 
     def on_disable(self):
-        self.logger.info("shutting down broadcaster")
         if self.mgr:
             self.mgr.stop()
+

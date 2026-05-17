@@ -164,11 +164,17 @@ class BroadcasterManager:
             cfg = re.sub(r'world-name:\s*[^\n]+', f'world-name: "{world_name}"', cfg)
             cfg = re.sub(r'ip:\s*[^\n]+', f'ip: "{public_ip}"', cfg)
             cfg = re.sub(r'port:\s*\d+', f'port: {server_port}', cfg)
+            # ensure query-server stays disabled so the jar uses our values
+            cfg = re.sub(r'query-server:\s*(true|false)', 'query-server: false', cfg)
             self.config_path.write_text(cfg, encoding="utf-8")
             self.logger.info(f"patched config (IP: {public_ip}:{server_port})")
             return
             
         cfg = f"""session:
+  update-interval: 30
+  query-server: false
+  web-query-fallback: false
+  config-fallback: false
   session-info:
     host-name: "{host_name}"
     world-name: "{world_name}"
@@ -176,6 +182,16 @@ class BroadcasterManager:
     max-players: 20
     ip: "{public_ip}"
     port: {server_port}
+friend-sync:
+  update-interval: 60
+  auto-follow: true
+  auto-unfollow: true
+  initial-invite: true
+  expiry:
+    enabled: true
+    days: 15
+    check: 1800
+debug-mode: false
 """
         self.config_path.write_text(cfg, encoding="utf-8")
         self.logger.info("created default config")
@@ -215,34 +231,49 @@ class BroadcasterManager:
     def tail(self):
         if not self.proc or not self.proc.stdout:
             return
-            
-        while self.running:
-            line = self.proc.stdout.readline()
-            if not line and self.proc.poll() is not None:
-                break
-                
-            line = line.strip()
-            if not line:
-                continue
-                
-            if "To sign in, use a web browser to open the page" in line:
-                self.logger.warning("--- XBOX AUTH REQUIRED ---")
-                self.logger.warning(line)
-            elif "Successfully authenticated as" in line:
-                user_info = line.split("Successfully authenticated as ")[-1]
-                self.logger.info("=======================================================")
-                self.logger.info(f"Broadcaster Logged In: {user_info}")
-                self.logger.info("=======================================================")
-            elif "Started broadcasting" in line:
-                self.logger.info("broadcasting online")
+
+        try:
+            while self.running:
+                line = self.proc.stdout.readline()
+                if not line and self.proc.poll() is not None:
+                    break
+
+                line = line.strip()
+                if not line:
+                    continue
+
+                # strip java log prefixes like "[14:58:24] [main/INFO]: "
+                clean = line
+                if ": " in clean:
+                    clean = clean.split(": ", 1)[-1]
+
+                if "To sign in, use a web browser to open the page" in line:
+                    self.logger.warning("=======================================================")
+                    self.logger.warning("--- XBOX AUTH REQUIRED ---")
+                    self.logger.warning(clean)
+                    self.logger.warning("=======================================================")
+                elif "Successfully authenticated as" in line:
+                    user_info = clean.split("Successfully authenticated as ")[-1]
+                    self.logger.info("=======================================================")
+                    self.logger.info(f"Broadcaster Logged In: {user_info}")
+                    self.logger.info("=======================================================")
+                elif "Started broadcasting" in line:
+                    self.logger.info("broadcasting online")
+                else:
+                    self.logger.info(f"[Java] {clean}")
+        except Exception as e:
+            self.logger.error(f"tail thread error: {e}")
+        finally:
+            rc = self.proc.poll() if self.proc else None
+            if rc is not None and rc != 0:
+                self.logger.warning(f"java process exited with code {rc}")
 
     def stop(self):
         self.running = False
         if self.proc:
-            self.logger.info("killing java process...")
             try:
                 if self.proc.stdin:
-                    self.proc.stdin.write("exit\\n")
+                    self.proc.stdin.write("exit\n")
                     self.proc.stdin.flush()
                 self.proc.wait(timeout=5)
             except subprocess.TimeoutExpired:

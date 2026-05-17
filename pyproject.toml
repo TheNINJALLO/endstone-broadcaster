@@ -4,16 +4,22 @@ build-backend = "hatchling.build"
 
 [project]
 name = "endstone-broadcaster"
-version = "1.0.3"
+version = "1.0.5"
 description = "A wrapper plugin for MCXboxBroadcast to broadcast your server to Xbox Live."
+readme = "README.md"
+license = {text = "MIT"}
 authors = [
     { name = "TheN1NJ4LL0"},
 ]
 requires-python = ">=3.11"
 dependencies = [
     "endstone>=0.11",
-    "requests"
 ]
+
+[project.urls]
+Homepage = "https://github.com/TheNINJALLO/endstone-broadcaster"
+Issues = "https://github.com/TheNINJALLO/endstone-broadcaster/issues"
 
 [project.entry-points."endstone"]
 broadcaster = "endstone_broadcaster.plugin:BroadcasterPlugin"
+
