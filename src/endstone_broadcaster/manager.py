@@ -27,6 +27,7 @@ class BroadcasterManager:
         self.running = False
         self.tail_thread = None
         self.restart_thread = None
+        self.update_thread = None
 
     def get_java(self):
         # check path first
@@ -104,16 +105,18 @@ class BroadcasterManager:
             self.logger.error(f"jre install failed: {e}")
             return None
 
-    def pull_jar(self):
-        if self.jar_path.exists():
-            return True
-            
-        self.logger.info("fetching standalone jar...")
+    def check_for_updates(self):
+        self.logger.info("checking for broadcaster updates...")
         try:
             url = "https://api.github.com/repos/MCXboxBroadcast/Broadcaster/releases/latest"
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req) as r:
+            with urllib.request.urlopen(req, timeout=10) as r:
                 data = json.loads(r.read().decode())
+                
+            tag_name = data.get("tag_name")
+            if not tag_name:
+                self.logger.error("failed to retrieve latest release tag name")
+                return
                 
             dl_url = None
             for asset in data.get("assets", []):
@@ -123,13 +126,67 @@ class BroadcasterManager:
                     
             if not dl_url:
                 self.logger.error("couldn't find jar in latest release")
-                return False
+                return
+
+            version_file = self.data_folder / "jar_version.txt"
+            local_version = ""
+            if version_file.exists():
+                try:
+                    local_version = version_file.read_text(encoding="utf-8").strip()
+                except Exception:
+                    pass
+
+            must_download = not self.jar_path.exists() or local_version != tag_name
+
+            if must_download:
+                self.logger.info(f"Downloading update: {tag_name} (current: {local_version or 'none'})...")
+                temp_jar_path = self.data_folder / f"{self.local_jar_name}.tmp"
                 
-            urllib.request.urlretrieve(dl_url, str(self.jar_path))
-            return True
+                # download to temp file
+                urllib.request.urlretrieve(dl_url, str(temp_jar_path))
+                
+                was_running = self.proc is not None
+                if was_running:
+                    self.logger.info("stopping broadcaster process to apply update...")
+                    self._kill_process()
+                
+                try:
+                    if self.jar_path.exists():
+                        self.jar_path.unlink()
+                    shutil.move(str(temp_jar_path), str(self.jar_path))
+                    version_file.write_text(tag_name, encoding="utf-8")
+                    self.logger.info(f"Broadcaster updated to {tag_name} successfully")
+                except Exception as e:
+                    self.logger.error(f"failed to replace jar file: {e}")
+                    if temp_jar_path.exists():
+                        try:
+                            temp_jar_path.unlink()
+                        except Exception:
+                            pass
+                finally:
+                    if was_running:
+                        self.logger.info("restarting broadcaster after update...")
+                        self._spawn_process()
+            else:
+                self.logger.info(f"Broadcaster is up to date (version: {tag_name})")
         except Exception as e:
-            self.logger.error(f"failed to download jar: {e}")
-            return False
+            self.logger.error(f"failed to check for updates: {e}")
+
+    def _update_loop(self):
+        """Periodically check for updates every 12 hours."""
+        update_interval = 43200  # 12 hours in seconds
+        while self.running:
+            # sleep in small increments so stop() can exit quickly
+            for _ in range(update_interval):
+                if not self.running:
+                    return
+                import time
+                time.sleep(1)
+            
+            if not self.running:
+                return
+                
+            self.check_for_updates()
 
     def setup_config(self):
         import re
@@ -208,7 +265,9 @@ debug-mode: false
             
         self.data_folder.mkdir(parents=True, exist_ok=True)
         
-        if not self.pull_jar():
+        self.check_for_updates()
+        if not self.jar_path.exists():
+            self.logger.error("broadcaster jar not found and download failed. cannot start.")
             return
             
         self.setup_config()
@@ -217,6 +276,10 @@ debug-mode: false
         # start the auto-restart cycle
         self.restart_thread = threading.Thread(target=self._restart_loop, daemon=True)
         self.restart_thread.start()
+
+        # start the periodic update check cycle
+        self.update_thread = threading.Thread(target=self._update_loop, daemon=True)
+        self.update_thread.start()
 
     def _spawn_process(self):
         """Launch the java process and tail its output."""
