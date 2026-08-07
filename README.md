@@ -20,8 +20,9 @@
 </p>
 
 <p align="center">
-  <a href="#overview">Overview</a> &bull;
-  <a href="#compatibility">Compatibility</a> &bull;
+  <a href="#what-it-does">What it does</a> &bull;
+  <a href="#how-to-use">How to use</a> &bull;
+  <a href="#commands-and-permissions">Commands</a> &bull;
   <a href="#install">Install</a> &bull;
   <a href="https://github.com/TheNINJALLO/endstone-broadcaster/releases">Releases</a>
 </p>
@@ -30,9 +31,22 @@
 
 A wrapper plugin for MCXboxBroadcast to broadcast your server to Xbox Live. This release is aligned with Endstone 0.11.8 and Minecraft Bedrock Dedicated Server 1.26.40, and is distributed as a Python wheel for direct installation in an Endstone server.
 
-## Capabilities
+## What it does
 
--
+- Runs MCXboxBroadcast Standalone beside Endstone so the Bedrock server can appear through Xbox Live social discovery.
+- Downloads a Java 17 runtime when necessary, keeps the broadcaster JAR current, and restarts the helper process automatically.
+- Builds the session configuration from `server.properties` and the detected public endpoint.
+
+## How to use
+
+1. Install the wheel and ensure the host can reach GitHub, Adoptium, Xbox services, and the public-IP lookup used during setup.
+2. Start Endstone and follow the MCXboxBroadcast authentication instructions printed in the server console.
+3. Review the generated `config.yml` in the plugin data folder and keep session credentials out of source control.
+4. Restart the plugin or server after changing the broadcaster configuration.
+
+## Commands and permissions
+
+This plugin has no Endstone commands. It starts, monitors, updates, and stops the MCXboxBroadcast helper automatically with the plugin lifecycle; authentication and status messages appear in the server console.
 
 ## Compatibility
 
