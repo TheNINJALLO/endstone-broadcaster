@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <img alt="Endstone 0.11.9" src="https://img.shields.io/badge/Endstone-0.11.9-52b7a8?style=flat-square">
+  <img alt="Endstone 0.11.14" src="https://img.shields.io/badge/Endstone-0.11.14-52b7a8?style=flat-square">
   <img alt="API 0.11" src="https://img.shields.io/badge/API-0.11-63b8ff?style=flat-square">
-  <img alt="BDS 1.26.44" src="https://img.shields.io/badge/BDS-1.26.44-8b7dff?style=flat-square">
+  <img alt="BDS 1.26.52.3" src="https://img.shields.io/badge/BDS-1.26.52.3-8b7dff?style=flat-square">
   <img alt="Python >=3.11" src="https://img.shields.io/badge/Python-%3E=3.11-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white">
 </p>
 
@@ -29,7 +29,7 @@
 
 ## Overview
 
-A wrapper plugin for MCXboxBroadcast to broadcast your server to Xbox Live. This release is aligned with Endstone 0.11.9 and Minecraft Bedrock Dedicated Server 1.26.44, and is distributed as a Python wheel for direct installation in an Endstone server.
+A wrapper plugin for MCXboxBroadcast to broadcast your server to Xbox Live. This release is aligned with Endstone 0.11.14 and Minecraft Bedrock Dedicated Server 1.26.52.3, and is distributed as a Python wheel for direct installation in an Endstone server.
 
 ## What it does
 
@@ -52,9 +52,9 @@ This plugin has no Endstone commands. It starts, monitors, updates, and stops th
 
 | Component | Supported version |
 |---|---|
-| Endstone | `0.11.9` |
+| Endstone | `0.11.14` |
 | Endstone API | `0.11` |
-| Bedrock Dedicated Server | `1.26.44` |
+| Bedrock Dedicated Server | `1.26.52.3` |
 | Python | `>=3.11` |
 | Plugin release | `v1.0.9` |
 
@@ -69,7 +69,7 @@ gh release download v1.0.9 --repo TheNINJALLO/endstone-broadcaster --pattern "*.
 Copy the downloaded wheel into the server's `plugins/` directory, remove any older wheel for the same plugin, and restart Endstone.
 
 > [!IMPORTANT]
-> Use Endstone `0.11.9` with BDS `1.26.44`. Back up worlds and plugin data before upgrading a production server.
+> Use Endstone `0.11.14` with BDS `1.26.52.3`. Back up worlds and plugin data before upgrading a production server.
 
 ## Configuration and secrets
 
