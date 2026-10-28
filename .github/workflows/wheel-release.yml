@@ -2,15 +2,36 @@ name: Build wheel and publish release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - "v*"
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Test config migration and helper lifecycle
+        run: |
+          python -m pip install pytest "PyYAML>=6.0.2,<7" ruff
+          python -m ruff check src tests
+          python -m pytest -q
+
   build-wheel:
+    needs: test
     runs-on: ubuntu-latest
     defaults:
       run:
