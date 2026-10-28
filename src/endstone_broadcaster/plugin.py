@@ -1,6 +1,9 @@
 from pathlib import Path
+
 from endstone.plugin import Plugin
+
 from endstone_broadcaster.manager import BroadcasterManager
+
 
 class BroadcasterPlugin(Plugin):
     api_version = "0.11"

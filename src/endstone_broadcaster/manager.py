@@ -51,6 +51,7 @@ class BroadcasterManager:
                 stderr=subprocess.STDOUT,
                 text=True,
                 timeout=10,
+                check=False,
                 creationflags=NO_WINDOW,
             )
             match = re.search(r'version\s+"(?:1\.)?(\d+)', result.stdout)

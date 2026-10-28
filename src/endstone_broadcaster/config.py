@@ -1,8 +1,8 @@
 """Configuration for MCXboxBroadcast Standalone build 160 (schema 7)."""
 
+import shutil
 from copy import deepcopy
 from pathlib import Path
-import shutil
 
 import yaml
 
