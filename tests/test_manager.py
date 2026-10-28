@@ -301,3 +301,45 @@ def test_empty_existing_config_gets_backed_up_and_initialized(tmp_path):
     config = sync_config(path, {}, "127.0.0.1", 19132)
     assert config["config-version"] == 7
     assert path.with_name("config.yml.pre-v7.bak").read_bytes() == original
+
+
+def test_java_launch_uses_http_adapter_and_shutdown_cleans_it_up(manager, monkeypatch):
+    manager.java_bin = "java21"
+    proxy = Mock()
+    proxy.java_options.return_value = [
+        "-Dhttp.proxyHost=127.0.0.1",
+        "-Dhttp.proxyPort=12345",
+        "-Dhttp.nonProxyHosts=",
+    ]
+    factory = Mock(return_value=proxy)
+    monkeypatch.setattr("endstone_broadcaster.manager.SignalingHTTPProxy", factory)
+    process = Mock(stdout=io.StringIO(""))
+    process.poll.return_value = 0
+    popen = Mock(return_value=process)
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    manager._spawn_process()
+    manager.stop()
+    factory.assert_called_once_with("127.0.0.1", 19132, manager.logger)
+    assert popen.call_args.args[0] == [
+        "java21",
+        *proxy.java_options.return_value,
+        "-jar",
+        manager.local_jar_name,
+    ]
+    assert not any("https.proxy" in argument for argument in popen.call_args.args[0])
+    proxy.stop.assert_called_once()
+    assert manager.signaling_proxy is None
+
+
+def test_java_launch_failure_stops_adapter(manager, monkeypatch):
+    manager.java_bin = "java21"
+    proxy = Mock()
+    proxy.java_options.return_value = []
+    monkeypatch.setattr(
+        "endstone_broadcaster.manager.SignalingHTTPProxy", Mock(return_value=proxy)
+    )
+    monkeypatch.setattr(subprocess, "Popen", Mock(side_effect=OSError("launch failed")))
+    with pytest.raises(OSError, match="launch failed"):
+        manager._spawn_process()
+    proxy.stop.assert_called_once()
+    assert manager.signaling_proxy is None

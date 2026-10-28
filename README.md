@@ -29,7 +29,7 @@
 
 ## Overview
 
-Endstone Broadcaster runs MCXboxBroadcast Standalone beside your Bedrock server so friends of the authenticated Xbox account can discover and join it. Version **1.1.0** targets Minecraft **26.60**, MCXboxBroadcast **build 160 or newer**, and its new NetherNet relay.
+Endstone Broadcaster runs MCXboxBroadcast Standalone beside your Bedrock server so friends of the authenticated Xbox account can discover and join it. Version **1.1.1** targets Minecraft **26.60**, MCXboxBroadcast **build 160 or newer**, and its new NetherNet relay.
 
 ## What it does
 
@@ -37,6 +37,7 @@ Endstone Broadcaster runs MCXboxBroadcast Standalone beside your Bedrock server 
 - Downloads the latest Standalone JAR at startup and checks again every 12 hours. Downloads are checked before replacing the installed JAR, including SHA-256 when GitHub supplies a digest.
 - Migrates old configuration to upstream schema **7**, keeping a copy at `config.yml.pre-v7.bak`.
 - Queries the backend over NetherNet for live session details, with configured metadata as a fallback.
+- Handles older NetherNet status endpoints that reject the new broadcaster's query parameters with HTTP 404.
 - Passes authentication and status messages to the Endstone console.
 - Runs setup outside the server thread and restarts the helper if it exits. Healthy helpers keep running; upstream handles session rotation.
 
@@ -50,7 +51,7 @@ Endstone Broadcaster runs MCXboxBroadcast Standalone beside your Bedrock server 
 | MCXboxBroadcast Standalone | **160+**; downloaded automatically |
 | Java | **21+**; portable Temurin 21 JRE installed if needed |
 | Python | **3.11+**; automatic tar extraction on Linux/macOS needs **3.11.8+** |
-| Plugin release | **v1.1.0** |
+| Plugin release | **v1.1.1** |
 
 Updating this wrapper updates the broadcaster, not the Endstone server binary or its game protocol. Endstone 0.11.14 is paired with BDS 1.26.52.3; use a server release or a protocol translator that accepts 26.60 clients as well as enabling NetherNet. Check the [Endstone releases](https://github.com/EndstoneMC/endstone/releases) and your translator's compatibility before upgrading the server.
 
@@ -59,7 +60,7 @@ Updating this wrapper updates the broadcaster, not the Endstone server binary or
 Download the release wheel:
 
 ```bash
-gh release download v1.1.0 --repo TheNINJALLO/endstone-broadcaster --pattern "*.whl"
+gh release download v1.1.1 --repo TheNINJALLO/endstone-broadcaster --pattern "*.whl"
 ```
 
 1. Stop Endstone and replace the old broadcaster wheel in `plugins/` with the new wheel.
@@ -73,6 +74,10 @@ The plugin data folder contains `config.yml`, `endstone-broadcaster.jar`, `jar_v
 ## How NetherNet works in 26.60
 
 [Upstream build 160](https://github.com/MCXboxBroadcast/Broadcaster/releases/tag/160) removes the old transfer proxy. It relays Xbox session negotiation to the backend's HTTP signaling endpoint, gathers the client's ICE candidates, and sends the backend's answer back to the client. Game traffic then flows directly between the client and backend over WebRTC.
+
+On older Endstone/BDS backends, a plain `GET /v1/join` can work while the new `GET /v1/join?version=...&protocol=...&id=...` probe returns 404. Version 1.1.1 starts a loopback HTTP adapter for the Java helper. If a probe with parameters returns 404, the adapter checks the plain endpoint and enables compatibility only when it returns valid NetherNet metadata for a protocol older than 26.60. Modern endpoints keep their query parameters, and HTTPS keeps its direct connection. SDP join requests and responses are forwarded unchanged; the official JAR is unchanged. No extra public port or config change is required.
+
+This fixes the probe failure before game protocol translation. Endweave still needs to support the connecting client. A 26.5x backend can continue advertising its native protocol in its status response while Endweave translates the actual connection.
 
 `session.remote-address` and `session.remote-port` identify the backend **as reached by the helper**. A helper running beside Endstone normally uses `127.0.0.1` and the server port. A specific `server-ip` binding is used when present; wildcard bindings are translated to loopback. Public IP lookup is no longer needed.
 
@@ -140,7 +145,7 @@ python -m pytest -q
 python -m build --wheel
 ```
 
-[CI](.github/workflows/wheel-release.yml) runs the migration, Java selection, download validation, and process lifecycle tests on Windows and Linux with Python 3.11 and 3.14 before building the wheel. A `v*` tag publishes the wheel to its GitHub release. See [the changelog](CHANGELOG.md) for upgrade details.
+[CI](.github/workflows/wheel-release.yml) runs the migration, Java selection, download validation, signaling compatibility, and process lifecycle tests on Windows and Linux with Python 3.11 and 3.14 before building the wheel. A `v*` tag publishes the wheel to its GitHub release. See [the changelog](CHANGELOG.md) for upgrade details.
 
 Runtime credentials, account caches, logs, and server data must stay outside source control.
 <!-- endstone-professional-header:end -->

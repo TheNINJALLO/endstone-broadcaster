@@ -12,6 +12,7 @@ import zipfile
 from pathlib import Path
 
 from endstone_broadcaster.config import read_properties, sync_config
+from endstone_broadcaster.signaling import SignalingHTTPProxy
 
 JAVA_VERSION = 21
 MIN_BROADCASTER_BUILD = 160
@@ -41,6 +42,8 @@ class BroadcasterManager:
         self.update_thread = None
         self._stopped = threading.Event()
         self._lock = threading.RLock()
+        self.signaling_proxy = None
+        self.backend = (server_ip, server_port)
 
     @staticmethod
     def _java_major(executable):
@@ -247,6 +250,12 @@ class BroadcasterManager:
                 "Minecraft 26.60 requires transport=nethernet in server.properties; update it and restart the server"
             )
         session = config["session"]
+        self.backend = (
+            "127.0.0.1"
+            if session["remote-address"] == "auto"
+            else session["remote-address"],
+            19132 if session["remote-port"] == "auto" else int(session["remote-port"]),
+        )
         self.logger.info(
             f"NetherNet relay backend: {session['remote-address']}:{session['remote-port']}"
         )
@@ -317,18 +326,29 @@ class BroadcasterManager:
         if self._stopped.is_set():
             return
         self.logger.info("Starting MCXboxBroadcast with Java 21+...")
-        self.proc = subprocess.Popen(
-            [self.java_bin, "-jar", self.local_jar_name],
-            cwd=str(self.data_folder),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            stdin=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            bufsize=1,
-            creationflags=NO_WINDOW,
-        )
+        self._stop_signaling_proxy()
+        self.signaling_proxy = SignalingHTTPProxy(*self.backend, self.logger)
+        try:
+            self.proc = subprocess.Popen(
+                [
+                    self.java_bin,
+                    *self.signaling_proxy.java_options(),
+                    "-jar",
+                    self.local_jar_name,
+                ],
+                cwd=str(self.data_folder),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+                creationflags=NO_WINDOW,
+            )
+        except Exception:
+            self._stop_signaling_proxy()
+            raise
         self.tail_thread = threading.Thread(
             target=self.tail, args=(self.proc,), name="broadcaster-output", daemon=True
         )
@@ -337,6 +357,7 @@ class BroadcasterManager:
     def _kill_process(self):
         process = self.proc
         if process is None:
+            self._stop_signaling_proxy()
             return
         if process.poll() is None:
             try:
@@ -357,6 +378,12 @@ class BroadcasterManager:
         for stream in (process.stdin, process.stdout):
             if stream:
                 stream.close()
+        self._stop_signaling_proxy()
+
+    def _stop_signaling_proxy(self):
+        if self.signaling_proxy is not None:
+            self.signaling_proxy.stop()
+            self.signaling_proxy = None
 
     def tail(self, process):
         if process.stdout is None:

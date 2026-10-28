@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.1 — 2026-10-27
+
+Fix MCXboxBroadcast build 160 reporting HTTP 404 for older Endstone/BDS NetherNet backends even when their plain status endpoint works.
+
+- Start a loopback HTTP adapter for the helper. When the configured backend rejects a status probe containing query parameters with 404, retry the plain status route and enable compatibility only if it returns valid older NetherNet metadata.
+- Preserve modern status queries and refusal responses. Forward SDP offer/answer bytes unchanged and keep HTTPS direct. Stop the adapter with the helper, including failed launches.
+- Keep the configured backend address, port, official JAR, and authentication cache intact. No new configuration or public port is required.
+
+Validation: 42 tests cover migration, runtime, lifecycle, modern and legacy signaling routes, and unchanged SDP forwarding. The actual build 160 Java client successfully probed the reported backend through this implementation with its original 26.60 client settings. An authenticated console join still needs to be checked after installing the wheel.
+
+Upgrade: replace the broadcaster wheel with v1.1.1 and restart Endstone. Keep the existing plugin data folder and backend endpoint. Endweave remains responsible for game protocol translation.
+
 ## 1.1.0 — 2026-10-27
 
 Update the wrapper for Minecraft 26.60 and MCXboxBroadcast Standalone build 160's NetherNet HTTP relay.
