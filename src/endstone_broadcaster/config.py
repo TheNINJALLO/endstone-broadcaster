@@ -1,4 +1,4 @@
-"""Configuration for MCXboxBroadcast Standalone build 160 (schema 7)."""
+"""Configuration for MCXboxBroadcast Standalone builds 160–162 (schemas 7–9)."""
 
 import shutil
 from copy import deepcopy
@@ -6,7 +6,8 @@ from pathlib import Path
 
 import yaml
 
-CONFIG_VERSION = 7
+CONFIG_VERSION = 9
+SUPPORTED_CONFIG_VERSIONS = (7, 8, 9)
 
 
 def read_properties(path):
@@ -40,7 +41,9 @@ def _integer(value, name, minimum, maximum):
     return number
 
 
-def build_config(existing, properties, server_ip, server_port):
+def build_config(
+    existing, properties, server_ip, server_port, target_version=CONFIG_VERSION
+):
     """Migrate old wrapper configs and preserve user settings in current configs."""
     if not isinstance(existing, dict):
         raise ValueError("config.yml must contain a YAML mapping")
@@ -48,7 +51,14 @@ def build_config(existing, properties, server_ip, server_port):
     version = _integer(
         config.get("config-version", 0), "config-version", 0, CONFIG_VERSION
     )
-    migrating = version < CONFIG_VERSION
+    if target_version not in SUPPORTED_CONFIG_VERSIONS:
+        raise ValueError(f"Unsupported target config schema: {target_version}")
+    if version > target_version:
+        raise ValueError(
+            f"Config schema {version} requires a newer broadcaster than the cached "
+            f"JAR (schema {target_version}); refusing to downgrade config.yml"
+        )
+    migrating = version < 7
     session = _section(config, "session")
     info = _section(session, "session-info")
     friends = _section(config, "friend-sync")
@@ -104,7 +114,12 @@ def build_config(existing, properties, server_ip, server_port):
 
     session.setdefault("query-server", True)
     session.setdefault("config-fallback", True)
-    session.setdefault("web-query-fallback", False)
+    if target_version >= 8:
+        session.setdefault("allow-ipv6", False)
+    if target_version >= 9:
+        session.pop("web-query-fallback", None)
+    else:
+        session.setdefault("web-query-fallback", False)
     session.setdefault("hide-old-sessions", True)
     session["update-interval"] = _integer(
         session.get("update-interval", 30), "session.update-interval", 20, 2147483647
@@ -134,24 +149,26 @@ def build_config(existing, properties, server_ip, server_port):
     _section(config, "notifications").setdefault("enabled", False)
     config.setdefault("debug-mode", False)
     config.setdefault("suppress-session-update-message", True)
-    config["config-version"] = CONFIG_VERSION
+    config["config-version"] = target_version
     return config
 
 
-def sync_config(path, properties, server_ip, server_port):
+def sync_config(
+    path, properties, server_ip, server_port, target_version=CONFIG_VERSION
+):
     """Back up legacy YAML once and atomically install the migrated configuration."""
     path = Path(path)
     original = path.read_text(encoding="utf-8-sig") if path.exists() else None
     existing = yaml.safe_load(original) if original is not None else {}
     if existing is None:
         existing = {}
-    config = build_config(existing, properties, server_ip, server_port)
+    config = build_config(existing, properties, server_ip, server_port, target_version)
     rendered = yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
     if rendered != original:
-        backup = path.with_name(path.name + ".pre-v7.bak")
+        backup = path.with_name(path.name + f".pre-v{target_version}.bak")
         if (
             original is not None
-            and existing.get("config-version", 0) != CONFIG_VERSION
+            and existing.get("config-version", 0) != target_version
             and not backup.exists()
         ):
             shutil.copy2(path, backup)

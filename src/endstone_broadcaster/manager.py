@@ -11,15 +11,24 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from endstone_broadcaster.config import read_properties, sync_config
+import yaml
+
+from endstone_broadcaster.config import build_config, read_properties, sync_config
 from endstone_broadcaster.signaling import SignalingHTTPProxy
 
 JAVA_VERSION = 21
 MIN_BROADCASTER_BUILD = 160
+# Only install releases whose config migrations have been reviewed by this wrapper.
+BUILD_SCHEMAS = {160: 7, 161: 8, 162: 9}
+MAX_BROADCASTER_BUILD = max(BUILD_SCHEMAS)
 UPDATE_INTERVAL = 43200
 MONITOR_INTERVAL = 30
 NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 USER_AGENT = {"User-Agent": "endstone-broadcaster"}
+
+
+class UpdateRecoveryError(RuntimeError):
+    """An update rollback needs operator recovery before any helper restart."""
 
 
 class BroadcasterManager:
@@ -44,6 +53,7 @@ class BroadcasterManager:
         self._lock = threading.RLock()
         self.signaling_proxy = None
         self.backend = (server_ip, server_port)
+        self._recovery_required = any(self.data_folder.glob("broadcaster-update-*"))
 
     @staticmethod
     def _java_major(executable):
@@ -161,12 +171,19 @@ class BroadcasterManager:
     def _jar_is_supported(self):
         version = self._local_version()
         return (
-            self.jar_path.is_file()
+            not self._recovery_required
+            and self.jar_path.is_file()
             and version.isdecimal()
-            and int(version) >= MIN_BROADCASTER_BUILD
+            and int(version) in BUILD_SCHEMAS
         )
 
     def check_for_updates(self):
+        if self._recovery_required:
+            self.logger.error(
+                "Broadcaster recovery required: inspect retained broadcaster-update-* "
+                "copies in the plugin data folder before restarting or updating"
+            )
+            return
         self.logger.info("Checking for broadcaster updates...")
         temporary = None
         try:
@@ -181,6 +198,27 @@ class BroadcasterManager:
                 raise RuntimeError(
                     "Minecraft 26.60 requires MCXboxBroadcast build 160 or newer"
                 )
+            if int(tag) > MAX_BROADCASTER_BUILD:
+                self.logger.warning(
+                    f"Upstream build {tag} is newer than this wrapper supports; "
+                    f"using reviewed build {MAX_BROADCASTER_BUILD}. Update the plugin "
+                    "before using newer broadcaster builds."
+                )
+                request = urllib.request.Request(
+                    "https://api.github.com/repos/MCXboxBroadcast/Broadcaster/releases/tags/"
+                    f"{MAX_BROADCASTER_BUILD}",
+                    headers=USER_AGENT,
+                )
+                with urllib.request.urlopen(request, timeout=10) as response:
+                    release = json.load(response)
+                tag = release.get("tag_name", "")
+                if tag != str(MAX_BROADCASTER_BUILD):
+                    raise RuntimeError("Reviewed broadcaster release metadata mismatch")
+            if self.jar_path.exists() and self._local_version().isdecimal():
+                if int(self._local_version()) > int(tag):
+                    raise RuntimeError(
+                        "Refusing to downgrade the installed broadcaster"
+                    )
             asset = next(
                 (
                     asset
@@ -222,18 +260,21 @@ class BroadcasterManager:
                 if self._stopped.is_set():
                     return
                 # Reject invalid configuration before interrupting a live helper.
-                self.setup_config()
+                target_schema = BUILD_SCHEMAS[int(tag)]
+                self._validated_config(target_schema)
                 was_running = self.proc is not None
                 if was_running:
                     self._kill_process()
                 try:
-                    temporary.replace(self.jar_path)
-                    version_tmp = self.version_file.with_suffix(".tmp")
-                    version_tmp.write_text(tag, encoding="utf-8")
-                    version_tmp.replace(self.version_file)
+                    self._install_update(temporary, tag)
                     self.logger.info(f"Broadcaster updated to build {tag}")
+                except UpdateRecoveryError:
+                    was_running = False
+                    raise
                 finally:
                     if was_running and not self._stopped.is_set():
+                        # Revalidate against the actual installed build, even on failure.
+                        self.setup_config()
                         self._spawn_process()
         except Exception as error:
             self.logger.error(f"Broadcaster update failed: {error}")
@@ -241,10 +282,92 @@ class BroadcasterManager:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
+    def _install_update(self, temporary, tag):
+        # Keep the JAR, version marker and config as one recoverable unit.
+        # The helper is stopped before taking these snapshots.
+        paths = (self.jar_path, self.version_file, self.config_path)
+        folder = Path(
+            tempfile.mkdtemp(prefix="broadcaster-update-", dir=self.data_folder)
+        )
+        retain_recovery = False
+        try:
+            saved = {}
+            for path in paths:
+                if path.exists():
+                    backup = folder / path.name
+                    shutil.copy2(path, backup)
+                    saved[path] = backup
+            try:
+                temporary.replace(self.jar_path)
+                version_tmp = self.version_file.with_suffix(".tmp")
+                try:
+                    version_tmp.write_text(tag, encoding="utf-8")
+                    version_tmp.replace(self.version_file)
+                finally:
+                    version_tmp.unlink(missing_ok=True)
+                self.setup_config()
+            except Exception as install_error:
+                failures = []
+                for path in paths:
+                    restore_tmp = path.with_name(path.name + ".restore.tmp")
+                    try:
+                        if path in saved:
+                            shutil.copy2(saved[path], restore_tmp)
+                            restore_tmp.replace(path)
+                        else:
+                            path.unlink(missing_ok=True)
+                    except OSError as error:
+                        failures.append(f"{path.name}: {error}")
+                    finally:
+                        try:
+                            restore_tmp.unlink(missing_ok=True)
+                        except OSError:
+                            pass
+                if failures:
+                    retain_recovery = True
+                    self._recovery_required = True
+                    raise UpdateRecoveryError(
+                        f"Broadcaster rollback incomplete; helper left stopped. "
+                        f"Recovery copies retained at {folder}: {'; '.join(failures)}"
+                    ) from install_error
+                raise
+        finally:
+            if not retain_recovery:
+                shutil.rmtree(folder)
+
+    def _config_schema(self):
+        version = self._local_version()
+        if not self._jar_is_supported():
+            raise RuntimeError(
+                "Cannot configure an unknown broadcaster JAR; supported builds are 160–162"
+            )
+        return BUILD_SCHEMAS[int(version)]
+
+    def _validated_config(self, target_schema):
+        properties = read_properties(Path.cwd() / "server.properties")
+        existing = (
+            yaml.safe_load(self.config_path.read_text(encoding="utf-8-sig"))
+            if self.config_path.exists()
+            else {}
+        )
+        return build_config(
+            {} if existing is None else existing,
+            properties,
+            self.ip,
+            self.port,
+            target_version=target_schema,
+        )
+
     def setup_config(self):
         self.data_folder.mkdir(parents=True, exist_ok=True)
         properties = read_properties(Path.cwd() / "server.properties")
-        config = sync_config(self.config_path, properties, self.ip, self.port)
+        config = sync_config(
+            self.config_path,
+            properties,
+            self.ip,
+            self.port,
+            target_version=self._config_schema(),
+        )
         if properties.get("transport", "nethernet").lower() != "nethernet":
             self.logger.error(
                 "Minecraft 26.60 requires transport=nethernet in server.properties; update it and restart the server"
@@ -283,7 +406,7 @@ class BroadcasterManager:
                     return
                 if not self._jar_is_supported():
                     raise RuntimeError(
-                        "Cannot start: download of MCXboxBroadcast build 160+ is required"
+                        "Cannot start: a compatible MCXboxBroadcast build 160–162 is required"
                     )
                 self.setup_config()
                 self._spawn_process()

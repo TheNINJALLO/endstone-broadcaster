@@ -29,13 +29,13 @@
 
 ## Overview
 
-Endstone Broadcaster runs MCXboxBroadcast Standalone beside your Bedrock server so friends of the authenticated Xbox account can discover and join it. Version **1.1.1** targets Minecraft **26.60**, MCXboxBroadcast **build 160 or newer**, and its new NetherNet relay.
+Endstone Broadcaster runs MCXboxBroadcast Standalone beside your Bedrock server so friends of the authenticated Xbox account can discover and join it. Candidate **1.1.2rc1** targets Minecraft **26.60**, MCXboxBroadcast **reviewed builds 160–162**, and its new NetherNet relay.
 
 ## What it does
 
 - Provisions Java **21** when the Java on PATH or a cached runtime is too old.
-- Downloads the latest Standalone JAR at startup and checks again every 12 hours. Downloads are checked before replacing the installed JAR, including SHA-256 when GitHub supplies a digest.
-- Migrates old configuration to upstream schema **7**, keeping a copy at `config.yml.pre-v7.bak`.
+- Checks upstream at startup and every 12 hours, installing only reviewed builds 160–162. If latest is newer, it selects build 162 and logs that a wrapper update is needed. Downloads are checked before replacing the installed JAR, including SHA-256 when GitHub supplies a digest.
+- Supports schemas **7, 8 and 9**, matching the installed JAR (160→7, 161→8, 162→9). Schema upgrades keep a copy at `config.yml.pre-v<TARGET>.bak`; existing backups are retained.
 - Queries the backend over NetherNet for live session details, with configured metadata as a fallback.
 - Handles older NetherNet status endpoints that reject the new broadcaster's query parameters with HTTP 404.
 - Passes authentication and status messages to the Endstone console.
@@ -48,20 +48,16 @@ Endstone Broadcaster runs MCXboxBroadcast Standalone beside your Bedrock server 
 | Endstone API | `0.11` (`endstone>=0.11.9,<0.12`; current stable release: `0.11.14`) |
 | Minecraft / advertised Xbox session | **26.60**, protocol **2225** in upstream build 160 |
 | Backend | NetherNet HTTP signaling and support for the connecting client's game protocol |
-| MCXboxBroadcast Standalone | **160+**; downloaded automatically |
+| MCXboxBroadcast Standalone | **160–162**; reviewed builds downloaded automatically |
 | Java | **21+**; portable Temurin 21 JRE installed if needed |
 | Python | **3.11+**; automatic tar extraction on Linux/macOS needs **3.11.8+** |
-| Plugin release | **v1.1.1** |
+| Plugin release | **v1.1.2rc1** (local candidate; not published) |
 
 Updating this wrapper updates the broadcaster, not the Endstone server binary or its game protocol. Endstone 0.11.14 is paired with BDS 1.26.52.3; use a server release or a protocol translator that accepts 26.60 clients as well as enabling NetherNet. Check the [Endstone releases](https://github.com/EndstoneMC/endstone/releases) and your translator's compatibility before upgrading the server.
 
 ## Install
 
-Download the release wheel:
-
-```bash
-gh release download v1.1.1 --repo TheNINJALLO/endstone-broadcaster --pattern "*.whl"
-```
+Use the attached `endstone_broadcaster-1.1.2rc1-py3-none-any.whl` candidate or build it from this source. This candidate is not a published GitHub release. Back up the full plugin data folder and old wheel before installing.
 
 1. Stop Endstone and replace the old broadcaster wheel in `plugins/` with the new wheel.
 2. Ensure the backend uses `transport=nethernet` in `server.properties`. Restart the backend after changing its transport.
@@ -87,7 +83,7 @@ For BDS, `server-udp-ports` belongs in `server.properties`. It is separate from 
 
 ## Configuration
 
-The generated `config.yml` uses upstream schema 7. This is the core session section:
+With build 162, the generated `config.yml` uses upstream schema 9. This is the core session section:
 
 ```yaml
 session:
@@ -95,7 +91,7 @@ session:
   remote-port: '19132'
   update-interval: 30
   query-server: true
-  web-query-fallback: false
+  allow-ipv6: false
   config-fallback: true
   hide-old-sessions: true
   session-info:
@@ -116,21 +112,27 @@ notifications:
   enabled: false
 debug-mode: false
 suppress-session-update-message: true
-config-version: 7
+config-version: 9
 ```
 
-During an upgrade from an older schema:
+During an upgrade from a legacy schema below 7:
 
 - `session-info.ip` and `port` are removed. The old public transfer destination is replaced with the local backend signaling endpoint.
 - `query-server` and `config-fallback` are enabled so the helper uses live backend metadata and tolerates a backend still starting.
 - `auto-follow` becomes `auto-friend`; `auto-unfollow` and `ice-port-range` are removed.
 - Notification settings, expiry rules, debug choices, and other custom values are preserved. YAML formatting and comments are normalized; the original file is backed up before migration.
 
-After migration, explicit schema 7 backend addresses, ports, query choices, and session rotation settings are retained. The host and world fallback names still follow `server-name` and `level-name` from `server.properties`. New configs also use its game mode and maximum player count as fallbacks. Stop Endstone before editing the file and start it again afterward.
+For schema 7, 8 or 9 configs, explicit backend addresses, ports, query choices, and session rotation settings are retained. The host and world fallback names still follow `server-name` and `level-name` from `server.properties`. New configs also use its game mode and maximum player count as fallbacks. Stop Endstone before editing the file and start it again afterward.
 
-If the helper runs in a different container/network namespace, set the schema 7 `remote-address` and `remote-port` to the address reachable from that container. Upstream also accepts `auto` for loopback and port 19132 in Standalone mode. Session and friend-sync update intervals must each be at least 20 seconds.
+If the helper runs in a different container/network namespace, set `remote-address` and `remote-port` to the address reachable from that container. Upstream also accepts `auto` for loopback and port 19132 in Standalone mode. Session and friend-sync update intervals must each be at least 20 seconds.
 
 Malformed YAML, invalid endpoints/intervals, and future schema versions stop helper startup with an error instead of overwriting the file.
+
+Schema 8 adds `allow-ipv6: false` without replacing explicit values. Schema 9 removes `web-query-fallback`, matching upstream. Migration from 7 or 8 does not reset endpoint or query preferences. An offline cached build 160/161 retains schema 7/8; a newer config is never downgraded to fit an older JAR. Upgrade download failure in that situation stops the helper with an actionable error instead of damaging config. Unknown installed builds are not silently downgraded or launched. JAR/config/version-marker replacement failures restore the prior matching files before attempting to restart the old helper.
+
+Rollback: stop Endstone and restore the old wheel **and the matching complete plugin data-folder backup** (JAR, version marker, config, account cache), then start it. Do not pair the old schema-7-only wrapper with a schema-9 config. Cached JAR identity relies on `jar_version.txt`; this is not an independent inspection of the JAR's embedded version. Keep the marker and JAR together and do not relabel an old binary. If a rollback itself fails, recovery copies remain in `broadcaster-update-*` and startup/updates are blocked until the matching files are restored and that recovery directory is moved out of the data folder.
+
+No live server or Xbox connection has been tested for this candidate; Linux Python 3.12 offline tests and wheel checks are documented in `FIX-REPORT.md`.
 
 ## Commands and permissions
 

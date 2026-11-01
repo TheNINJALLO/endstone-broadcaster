@@ -289,7 +289,7 @@ def test_bootstrap_refuses_cached_pre_26_60_jar_when_update_is_unavailable(
     manager._bootstrap()
     spawn.assert_not_called()
     assert manager.running is False
-    assert "build 160+" in manager.logger.error.call_args.args[0]
+    assert "build 160–162" in manager.logger.error.call_args.args[0]
 
 
 def test_empty_existing_config_gets_backed_up_and_initialized(tmp_path):
@@ -299,8 +299,8 @@ def test_empty_existing_config_gets_backed_up_and_initialized(tmp_path):
     path.write_text("# empty config\n", encoding="utf-8")
     original = path.read_bytes()
     config = sync_config(path, {}, "127.0.0.1", 19132)
-    assert config["config-version"] == 7
-    assert path.with_name("config.yml.pre-v7.bak").read_bytes() == original
+    assert config["config-version"] == 9
+    assert path.with_name("config.yml.pre-v9.bak").read_bytes() == original
 
 
 def test_java_launch_uses_http_adapter_and_shutdown_cleans_it_up(manager, monkeypatch):
@@ -343,3 +343,159 @@ def test_java_launch_failure_stops_adapter(manager, monkeypatch):
         manager._spawn_process()
     proxy.stop.assert_called_once()
     assert manager.signaling_proxy is None
+
+
+@pytest.mark.parametrize("build,schema", [(160, 7), (161, 8), (162, 9)])
+def test_offline_cached_build_writes_compatible_schema(
+    manager, monkeypatch, build, schema
+):
+    import yaml
+
+    manager.jar_path.write_bytes(b"cached")
+    manager.version_file.write_text(str(build))
+    monkeypatch.setattr("endstone_broadcaster.manager.read_properties", lambda _: {})
+    manager.setup_config()
+    config = yaml.safe_load(manager.config_path.read_text())
+    assert config["config-version"] == schema
+    assert ("web-query-fallback" in config["session"]) == (schema < 9)
+
+
+def test_cached_old_jar_never_downgrades_v9_config(manager, monkeypatch):
+    manager.jar_path.write_bytes(b"cached")
+    manager.version_file.write_text("160")
+    original = "config-version: 9\nsession:\n  remote-address: custom.example\n"
+    manager.config_path.write_text(original)
+    with pytest.raises(ValueError, match="refusing to downgrade"):
+        manager.setup_config()
+    assert manager.config_path.read_text() == original
+
+
+@pytest.mark.parametrize("version", [7, 8, 9])
+def test_update_to162_preserves_config_preferences(manager, monkeypatch, version):
+    import yaml
+
+    manager.jar_path.write_bytes(b"cached")
+    manager.version_file.write_text("160")
+    manager.config_path.write_text(
+        yaml.safe_dump(
+            {
+                "config-version": version,
+                "session": {
+                    "remote-address": "my.backend",
+                    "remote-port": "20001",
+                    "query-server": False,
+                    "config-fallback": False,
+                    "allow-ipv6": True,
+                },
+            }
+        )
+    )
+    fake_release(monkeypatch, jar_fixture(), tag="162")
+    manager.check_for_updates()
+    assert manager._local_version() == "162"
+    config = yaml.safe_load(manager.config_path.read_text())
+    assert config["config-version"] == 9
+    assert config["session"]["remote-address"] == "my.backend"
+    assert config["session"]["remote-port"] == "20001"
+    assert config["session"]["query-server"] is False
+    assert config["session"]["config-fallback"] is False
+    assert config["session"]["allow-ipv6"] is True
+    assert "web-query-fallback" not in config["session"]
+
+
+def test_future_release_uses_reviewed162_metadata(manager, monkeypatch):
+    jar = jar_fixture()
+    calls = []
+
+    def get(request, timeout):
+        url = request.full_url
+        calls.append(url)
+        if url.endswith("releases/latest"):
+            return io.BytesIO(json.dumps({"tag_name": "163"}).encode())
+        if url.endswith("releases/tags/162"):
+            return io.BytesIO(
+                json.dumps(
+                    {
+                        "tag_name": "162",
+                        "assets": [
+                            {
+                                "name": manager.github_jar_name,
+                                "browser_download_url": "https://example.invalid/162.jar",
+                                "digest": "sha256:" + hashlib.sha256(jar).hexdigest(),
+                            }
+                        ],
+                    }
+                ).encode()
+            )
+        assert url == "https://example.invalid/162.jar"
+        return io.BytesIO(jar)
+
+    monkeypatch.setattr("endstone_broadcaster.manager.urllib.request.urlopen", get)
+    manager.check_for_updates()
+    assert manager._local_version() == "162"
+    assert manager.jar_path.read_bytes() == jar
+    assert any("releases/tags/162" in url for url in calls)
+
+
+def test_future_cached_build_is_not_downgraded(manager, monkeypatch):
+    manager.jar_path.write_bytes(b"future")
+    manager.version_file.write_text("163")
+    fake_release(monkeypatch, jar_fixture(), tag="162")
+    manager.check_for_updates()
+    assert manager.jar_path.read_bytes() == b"future"
+    assert manager._local_version() == "163"
+    assert not manager._jar_is_supported()
+
+
+def test_config_install_failure_rolls_back_jar_marker_and_config(manager, monkeypatch):
+    manager.jar_path.write_bytes(b"old")
+    manager.version_file.write_text("160")
+    original = "config-version: 7\n"
+    manager.config_path.write_text(original)
+    fake_release(monkeypatch, jar_fixture(), tag="162")
+    monkeypatch.setattr(manager, "setup_config", Mock(side_effect=OSError("disk full")))
+    manager.check_for_updates()
+    assert manager.jar_path.read_bytes() == b"old"
+    assert manager._local_version() == "160"
+    assert manager.config_path.read_text() == original
+    assert not list(manager.data_folder.glob("*.tmp"))
+    assert not list(manager.data_folder.glob("broadcaster-update-*"))
+
+
+def test_failed_rollback_retains_recovery_and_does_not_restart(manager, monkeypatch):
+    import shutil
+
+    manager.jar_path.write_bytes(b"original-jar")
+    manager.version_file.write_text("160")
+    manager.config_path.write_text("config-version: 7\n")
+    manager.proc = Mock()
+    monkeypatch.setattr(
+        manager, "_kill_process", lambda: setattr(manager, "proc", None)
+    )
+    spawn = Mock()
+    monkeypatch.setattr(manager, "_spawn_process", spawn)
+    monkeypatch.setattr(manager, "setup_config", Mock(side_effect=OSError("disk full")))
+    copy = shutil.copy2
+
+    def fail_restore(source, destination, *args, **kwargs):
+        if str(destination).endswith(".jar.restore.tmp"):
+            raise OSError("restore blocked")
+        return copy(source, destination, *args, **kwargs)
+
+    monkeypatch.setattr("endstone_broadcaster.manager.shutil.copy2", fail_restore)
+    fake_release(monkeypatch, jar_fixture(), tag="162")
+    manager.check_for_updates()
+    spawn.assert_not_called()
+    folders = list(manager.data_folder.glob("broadcaster-update-*"))
+    assert len(folders) == 1
+    assert (folders[0] / manager.local_jar_name).read_bytes() == b"original-jar"
+    assert (folders[0] / "jar_version.txt").read_text() == "160"
+    assert (folders[0] / "config.yml").read_text() == "config-version: 7\n"
+    assert "rollback incomplete" in manager.logger.error.call_args.args[0]
+
+
+    assert not manager._jar_is_supported()
+    replacement = BroadcasterManager(manager.data_folder, Mock(), "127.0.0.1", 19132)
+    assert not replacement._jar_is_supported()
+    replacement.check_for_updates()
+    assert "recovery required" in replacement.logger.error.call_args.args[0]
