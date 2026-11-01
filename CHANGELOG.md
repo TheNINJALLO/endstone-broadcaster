@@ -1,4 +1,4 @@
-## 1.1.2rc1 (local candidate, 2026-11-01)
+## 1.1.2 — 2026-11-01
 
 - Support MCXboxBroadcast config schemas 7–9, including build 161 IPv6 and build 162 web-fallback removal.
 - Preserve customized schema 7/8 endpoints and query settings during migration.
@@ -6,7 +6,12 @@
 - Bound downloads to reviewed builds through 162; newer upstream releases require a wrapper update.
 - Validate before interrupting a helper and restore JAR/config/marker together if update installation fails.
 - Add schema, cache, future-release and failure recovery regression tests.
-- Not published or live-runtime tested.
+- Promoted the tested 1.1.2rc1 candidate after the operator confirmed it works on their setup; no functional changes.
+- Automated tests passed on Ubuntu/Windows with Python 3.11/3.14. This does not establish live compatibility for every server setup.
+
+## 1.1.2rc1 — 2026-11-01
+
+- Published the schema 9 compatibility fix as a prerelease for operator validation.
 
 # Changelog
 

@@ -29,7 +29,7 @@
 
 ## Overview
 
-Endstone Broadcaster runs MCXboxBroadcast Standalone beside your Bedrock server so friends of the authenticated Xbox account can discover and join it. Candidate **1.1.2rc1** targets Minecraft **26.60**, MCXboxBroadcast **reviewed builds 160–162**, and its new NetherNet relay.
+Endstone Broadcaster runs MCXboxBroadcast Standalone beside your Bedrock server so friends of the authenticated Xbox account can discover and join it. Release **1.1.2** targets Minecraft **26.60**, MCXboxBroadcast **reviewed builds 160–162**, and its new NetherNet relay.
 
 ## What it does
 
@@ -51,13 +51,13 @@ Endstone Broadcaster runs MCXboxBroadcast Standalone beside your Bedrock server 
 | MCXboxBroadcast Standalone | **160–162**; reviewed builds downloaded automatically |
 | Java | **21+**; portable Temurin 21 JRE installed if needed |
 | Python | **3.11+**; automatic tar extraction on Linux/macOS needs **3.11.8+** |
-| Plugin release | **v1.1.2rc1** (local candidate; not published) |
+| Plugin release | **v1.1.2** |
 
 Updating this wrapper updates the broadcaster, not the Endstone server binary or its game protocol. Endstone 0.11.14 is paired with BDS 1.26.52.3; use a server release or a protocol translator that accepts 26.60 clients as well as enabling NetherNet. Check the [Endstone releases](https://github.com/EndstoneMC/endstone/releases) and your translator's compatibility before upgrading the server.
 
 ## Install
 
-Use the attached `endstone_broadcaster-1.1.2rc1-py3-none-any.whl` candidate or build it from this source. This candidate is not a published GitHub release. Back up the full plugin data folder and old wheel before installing.
+Download `endstone_broadcaster-1.1.2-py3-none-any.whl` from the [v1.1.2 release](https://github.com/TheNINJALLO/endstone-broadcaster/releases/tag/v1.1.2), or build it from this source. Back up the full plugin data folder and old wheel before installing.
 
 1. Stop Endstone and replace the old broadcaster wheel in `plugins/` with the new wheel.
 2. Ensure the backend uses `transport=nethernet` in `server.properties`. Restart the backend after changing its transport.
