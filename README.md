@@ -1,3 +1,7 @@
+[Download compatibility release v1.1.3](https://github.com/TheNINJALLO/endstone-broadcaster/releases/tag/v1.1.3).
+
+> Compatibility update **1.1.3** targets **Endstone 0.11.16 / BDS 1.26.65.1**, protocol **2225**, Python **3.11+**. API level remains **0.11**. Keep configuration and player data when replacing the wheel. Earlier acceptance records below describe their original builds; current qualification is tracked in the workspace upgrade report.
+
 <!-- endstone-professional-header:start -->
 <p align="center">
   <img src="docs/assets/banner.svg" width="100%" alt="Endstone Broadcaster &mdash; A wrapper plugin for MCXboxBroadcast to broadcast your server to Xbox Live">
@@ -9,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img alt="Endstone 0.11.14" src="https://img.shields.io/badge/Endstone-0.11.14-52b7a8?style=flat-square">
+  <img alt="Endstone 0.11.16" src="https://img.shields.io/badge/Endstone-0.11.16-52b7a8?style=flat-square">
   <img alt="API 0.11" src="https://img.shields.io/badge/API-0.11-63b8ff?style=flat-square">
   <img alt="Minecraft 26.60" src="https://img.shields.io/badge/Minecraft-26.60-8b7dff?style=flat-square">
   <img alt="Python >=3.11" src="https://img.shields.io/badge/Python-%3E=3.11-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white">
@@ -57,7 +61,7 @@ Updating this wrapper updates the broadcaster, not the Endstone server binary or
 
 ## Install
 
-Download `endstone_broadcaster-1.1.2-py3-none-any.whl` from the [v1.1.2 release](https://github.com/TheNINJALLO/endstone-broadcaster/releases/tag/v1.1.2), or build it from this source. Back up the full plugin data folder and old wheel before installing.
+Download `endstone_broadcaster-1.1.3-py3-none-any.whl` from the [v1.1.3 release](https://github.com/TheNINJALLO/endstone-broadcaster/releases/tag/v1.1.3), or build it from this source. Back up the full plugin data folder and old wheel before installing.
 
 1. Stop Endstone and replace the old broadcaster wheel in `plugins/` with the new wheel.
 2. Ensure the backend uses `transport=nethernet` in `server.properties`. Restart the backend after changing its transport.
